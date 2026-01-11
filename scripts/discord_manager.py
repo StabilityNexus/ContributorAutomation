@@ -192,7 +192,10 @@ def post_success_message(repo_name: str, pr_number: int, pr_author: str,
                         github_token: str, message_type: str):
     """Post success message to PR."""
     messages = load_error_messages()
-    template = messages['success'].get(message_type, '')
+    template = messages.get('success', {}).get(message_type, '')
+    
+    if not template:
+        print(f"Warning: No success template found for '{message_type}'")
     
     message = template.replace('{username}', pr_author)
     
