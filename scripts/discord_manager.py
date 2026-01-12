@@ -84,26 +84,12 @@ class DiscordManager:
                 print(f"✗ Failed: {response.status_code} - {response.text}")
                 return False
         
-        except ImportError:
-            # If discord.py is not installed, fallback to generic error handling
-            print("discord.py not installed; cannot catch specific exceptions.")
+        except requests.exceptions.Timeout:
+            print("✗ Request timed out while assigning role")
             return False
-        except Exception as e:
-            # Try to catch only discord.py exceptions if available
-            try:
-                import discord
-                if isinstance(e, getattr(discord, 'Forbidden', type(e))):
-                    print(f"✗ Discord Forbidden error assigning role: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'NotFound', type(e))):
-                    print(f"✗ Discord NotFound error assigning role: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'HTTPException', type(e))):
-                    print(f"✗ Discord HTTPException assigning role: {e}")
-                    return False
-            except ImportError:
-                pass
-            raise
+        except requests.exceptions.RequestException as e:
+            print(f"✗ Request error assigning role: {e}")
+            return False
     
     def remove_role(self, guild_id: str, user_id: str, role_id: str) -> bool:  # this for future 
         """Remove role from Discord user."""
@@ -118,24 +104,12 @@ class DiscordManager:
                 print(f"✗ Failed to remove role: {response.status_code}")
                 return False
         
-        except ImportError:
-            print("discord.py not installed; cannot catch specific exceptions.")
+        except requests.exceptions.Timeout:
+            print("✗ Request timed out while removing role")
             return False
-        except Exception as e:
-            try:
-                import discord
-                if isinstance(e, getattr(discord, 'Forbidden', type(e))):
-                    print(f"✗ Discord Forbidden error removing role: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'NotFound', type(e))):
-                    print(f"✗ Discord NotFound error removing role: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'HTTPException', type(e))):
-                    print(f"✗ Discord HTTPException removing role: {e}")
-                    return False
-            except ImportError:
-                pass
-            raise
+        except requests.exceptions.RequestException as e:
+            print(f"✗ Request error removing role: {e}")
+            return False
     
     def send_channel_message(self, channel_id: str, content: str) -> bool:   # for future
         """Send message to channel."""
@@ -146,24 +120,12 @@ class DiscordManager:
             
             return response.status_code == 200
         
-        except ImportError:
-            print("discord.py not installed; cannot catch specific exceptions.")
+        except requests.exceptions.Timeout:
+            print("✗ Request timed out while sending channel message")
             return False
-        except Exception as e:
-            try:
-                import discord
-                if isinstance(e, getattr(discord, 'Forbidden', type(e))):
-                    print(f"Discord Forbidden error sending channel message: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'NotFound', type(e))):
-                    print(f"Discord NotFound error sending channel message: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'HTTPException', type(e))):
-                    print(f"Discord HTTPException sending channel message: {e}")
-                    return False
-            except ImportError:
-                pass
-            raise
+        except requests.exceptions.RequestException as e:
+            print(f"✗ Request error sending channel message: {e}")
+            return False
     
     def send_dm(self, user_id: str, content: str) -> bool:   # for future
         """
@@ -189,24 +151,12 @@ class DiscordManager:
             # Send message
             return self.send_channel_message(channel_id, content)
         
-        except ImportError:
-            print("discord.py not installed; cannot catch specific exceptions.")
+        except requests.exceptions.Timeout:
+            print("✗ Request timed out while sending DM")
             return False
-        except Exception as e:
-            try:
-                import discord
-                if isinstance(e, getattr(discord, 'Forbidden', type(e))):
-                    print(f"Discord Forbidden error sending DM: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'NotFound', type(e))):
-                    print(f"Discord NotFound error sending DM: {e}")
-                    return False
-                if isinstance(e, getattr(discord, 'HTTPException', type(e))):
-                    print(f"Discord HTTPException sending DM: {e}")
-                    return False
-            except ImportError:
-                pass
-            raise
+        except requests.exceptions.RequestException as e:
+            print(f"✗ Request error sending DM: {e}")
+            return False
 
 
 def ask_for_info(repo_name: str, pr_number: int, pr_author: str, github_token: str):  
