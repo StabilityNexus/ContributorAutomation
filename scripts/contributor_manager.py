@@ -135,6 +135,12 @@ class ContributorManager:
             'labels': pr_data.get('labels', [])
         }
         
+        # Safely handle missing keys in malformed TOML
+        if 'pull_requests' not in contributor_data:
+            contributor_data['pull_requests'] = []
+        if 'contributor' not in contributor_data:
+            contributor_data['contributor'] = {}
+        
         contributor_data['pull_requests'].append(new_pr)
         contributor_data['contributor']['total_prs'] = len(contributor_data['pull_requests'])
         
