@@ -30,11 +30,8 @@ class ContributorManager:
     
     def clone_gist(self):
         """Clone Gist repository to temp directory."""
-        self.repo_dir = os.path.join(tempfile.gettempdir(), 'contributor_gist_repo')
-        
-        # Fresh clone each time
-        if os.path.exists(self.repo_dir):
-            shutil.rmtree(self.repo_dir)
+        # Create unique temp directory to avoid race conditions
+        self.repo_dir = tempfile.mkdtemp(prefix='contributor_gist_')
         
         # Clone with authentication
         auth_url = self.gist_url.replace('https://', f'https://{self.gist_pat}@')
@@ -47,7 +44,9 @@ class ContributorManager:
                 text=True
             )
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to clone Gist: {e.stderr}")
+            # Redact PAT from error message to prevent leakage
+            safe_error = e.stderr.replace(self.gist_pat, '***REDACTED***')
+            raise RuntimeError(f"Failed to clone Gist: {safe_error}")
     
     def contributor_exists(self, username: str) -> bool:
         """Check if contributor already exists in registry."""
@@ -120,6 +119,13 @@ class ContributorManager:
         with open(file_path, 'r') as f:
             contributor_data = toml.load(f)
         
+        # Check if PR already exists to prevent duplicates
+        existing_prs = contributor_data.get('pull_requests', [])
+        for pr in existing_prs:
+            if pr.get('pr_number') == pr_data['pr_number'] and pr.get('repository') == pr_data['repo_name']:
+                print(f"PR #{pr_data['pr_number']} already exists for {username}")
+                return True  # Already exists, no need to add again
+        
         # Add new PR
         new_pr = {
             'pr_number': pr_data['pr_number'],
@@ -167,6 +173,33 @@ def main():
     
     args = parser.parse_args()
     
+    # Validate required arguments for each action
+    if args.action == 'check_exists':
+        if not args.username:
+            parser.error("--username is required for check_exists action")
+    
+    elif args.action == 'create':
+        required_args = {
+            'username': args.username,
+            'discord-id': args.discord_id,
+            'wallet': args.wallet,
+            'pr-number': args.pr_number,
+            'repo-name': args.repo_name
+        }
+        missing = [name for name, value in required_args.items() if value is None]
+        if missing:
+            parser.error(f"create action requires: --{', --'.join(missing)}")
+    
+    elif args.action == 'add_pr':
+        required_args = {
+            'username': args.username,
+            'pr-number': args.pr_number,
+            'repo-name': args.repo_name
+        }
+        missing = [name for name, value in required_args.items() if value is None]
+        if missing:
+            parser.error(f"add_pr action requires: --{', --'.join(missing)}")
+    
     try:
         manager = ContributorManager(args.gist_pat)
         
@@ -212,7 +245,7 @@ def main():
             if success:
                 print(f"✓ Added PR to contributor: {args.username}")
             else:
-                print(f"✗ Failed to add PR")
+                print("✗ Failed to add PR")
                 sys.exit(1)
     
     except Exception as e:
