@@ -77,12 +77,14 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         id: labels
         uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
         with:
           script: |
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: ${{ inputs.pr_number }}
+              pull_number: parseInt(process.env.PR_NUMBER, 10)
             });
             return JSON.stringify(pr.labels.map(l => l.name));
       
@@ -90,15 +92,20 @@ jobs:
         if: steps.check.outputs.exists == 'true'
         env:
           GIST_PAT: ${{ secrets.GIST_PAT }}
+          PR_AUTHOR: ${{ inputs.pr_author }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPO_NAME: ${{ inputs.repo_name }}
+          PR_TITLE: ${{ inputs.pr_title }}
+          LINES_CHANGED: ${{ inputs.lines_changed }}
         run: |
           cd automation
           python scripts/contributor_manager.py \
             --action add_pr \
-            --username "${{ inputs.pr_author }}" \
-            --pr-number ${{ inputs.pr_number }} \
-            --repo-name "${{ inputs.repo_name }}" \
-            --pr-title "${{ inputs.pr_title }}" \
-            --lines-changed ${{ inputs.lines_changed }} \
+            --username "$PR_AUTHOR" \
+            --pr-number "$PR_NUMBER" \
+            --repo-name "$REPO_NAME" \
+            --pr-title "$PR_TITLE" \
+            --lines-changed "$LINES_CHANGED" \
             --labels '${{ steps.labels.outputs.result }}' \
             --gist-pat "$GIST_PAT"
       
