@@ -144,9 +144,16 @@ class ContributorManager:
         contributor_data['pull_requests'].append(new_pr)
         contributor_data['contributor']['total_prs'] = len(contributor_data['pull_requests'])
         
+        # Reconstruct data with proper ordering nd this will us in future as we add more fields
+        ordered_data = {
+            'schema_version': contributor_data.get('schema_version', 1),
+            'contributor': contributor_data.get('contributor', {}),
+            'pull_requests': contributor_data.get('pull_requests', [])
+        }
+        
         # Write updated TOML
         with open(file_path, 'w') as f:
-            toml.dump(contributor_data, f)
+            toml.dump(ordered_data, f)
         
         # Commit and push
         try:
