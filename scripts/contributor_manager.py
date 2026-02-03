@@ -144,7 +144,6 @@ class ContributorManager:
         contributor_data['pull_requests'].append(new_pr)
         contributor_data['contributor']['total_prs'] = len(contributor_data['pull_requests'])
         
-        # Reconstruct data with proper ordering nd this will us in future as we add more fields
         ordered_data = {
             'schema_version': contributor_data.get('schema_version', 1),
             'contributor': contributor_data.get('contributor', {}),
