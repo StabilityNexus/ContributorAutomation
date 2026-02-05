@@ -76,9 +76,13 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const prAuthor = process.env.PR_AUTHOR;
-            const comment = `🎉 **Congratulations @${prAuthor} on your first merged PR!**
+            const comment = `🎉 **Congratulations @${prAuthor} on opening first PR!**
             
-            To complete your onboarding, please provide:
+            ## ⚠️ Important: Developer Certificate of Origin (DCO)
+            
+            **Please reply to this comment ONLY if you agree with the [Developer Certificate of Origin (DCO)](https://github.com/StabilityNexus/Template-Repo/blob/main/DCO.md) for this contribution and for all future contributions.**
+            
+            If you agree, please provide the following details:
             
             1. **Discord User ID** (17-20 digits)
             2. **Wallet Address** (should be non-custodial wallet)
@@ -97,7 +101,9 @@ jobs:
             \`\`\`
             discord: 123456789012345678
             wallet: 0x1234567890abcdef1234567890abcdef12345678
-            \`\`\``;
+            \`\`\`
+            
+            ⚠️ **If you do not agree with the DCO, please close this PR.**`;
             
             await github.rest.issues.createComment({
               owner,
