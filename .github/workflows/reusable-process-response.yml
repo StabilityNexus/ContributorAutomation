@@ -12,14 +12,18 @@ on:
         description: 'Repository name (owner/repo)'
         required: true
         type: string
-      comment_body:
-        description: 'Comment body text'
+      pr_author:
+        description: 'PR author username'
         required: true
         type: string
-      commenter:
-        description: 'Username who commented'
+      pr_title:
+        description: 'PR title'
         required: true
         type: string
+      lines_changed:
+        description: 'Total lines changed'
+        required: true
+        type: number
     secrets:
       GIST_PAT:
         required: true
@@ -27,6 +31,7 @@ on:
 permissions:
   pull-requests: write
   issues: write
+  contents: write
 
 jobs:
   process_response:
@@ -48,24 +53,24 @@ jobs:
       - name: Install dependencies
         run: pip install -r automation/requirements.txt
       
-      # Validate and extract Discord/wallet from comment
-      - name: Validate and extract info
+      # Fetch all PR comments and extract author's discord/wallet
+      - name: Fetch and validate author comments
         id: extract
         uses: actions/github-script@v7
         env:
-          COMMENT_BODY: ${{ inputs.comment_body }}
           PR_NUMBER: ${{ inputs.pr_number }}
-          COMMENTER: ${{ inputs.commenter }}
+          PR_AUTHOR: ${{ inputs.pr_author }}
         with:
           script: |
             const { owner, repo } = context.repo;
-            const issueNumber = parseInt(process.env.PR_NUMBER, 10);
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const prAuthor = process.env.PR_AUTHOR;
             
-            // Fetch PR details
+            // Fetch PR details to check labels
             const { data: pr } = await github.rest.pulls.get({
               owner,
               repo,
-              pull_number: issueNumber,
+              pull_number: prNumber,
             });
             
             // Must be merged
@@ -85,43 +90,49 @@ jobs:
               return;
             }
             
-            // Only PR author can respond
-            const commenter = process.env.COMMENTER;
-            if (commenter !== pr.user.login) {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: issueNumber,
-                body: `[WARNING] @${commenter}, only the PR author (@${pr.user.login}) can provide onboarding information.`
-              });
-              core.setOutput('skip', 'true');
-              return;
-            }
+            // Fetch all comments from the PR
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: prNumber,
+            });
             
-            // Extract Discord ID and wallet
-            const body = process.env.COMMENT_BODY;
-            const discordMatch = body.match(/discord:\s*["\']?(\d{17,20})["\']?/i);
-            const walletMatch = body.match(/wallet:\s*["\']?(0x[a-fA-F0-9]{40})["\']?/i);
+            console.log(`Total comments: ${comments.length}`);
             
-            if (!discordMatch || !walletMatch) {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: issueNumber,
-                body: `[ERROR] Invalid format. Please use:\n\`\`\`\ndiscord: "YOUR_DISCORD_ID"\nwallet: "YOUR_WALLET_ADDRESS"\n\`\`\``
-              });
-              core.setOutput('skip', 'true');
-              return;
+            // Filter only PR author's comments (ignore all others silently - no warnings)
+            const authorComments = comments.filter(comment => comment.user.login === prAuthor);
+            console.log(`Author comments: ${authorComments.length}`);
+            
+            // Search for discord and wallet in author's comments only
+            let discordId = null;
+            let wallet = null;
+            
+            for (const comment of authorComments) {
+              const body = comment.body;
+              
+              const discordMatch = body.match(/discord:\s*["\']?(\d{17,20})["\']?/i);
+              if (discordMatch && !discordId) {
+                discordId = discordMatch[1];
+              }
+              
+              const walletMatch = body.match(/wallet:\s*["\']?(0x[a-fA-F0-9]{40})["\']?/i);
+              if (walletMatch && !wallet) {
+                wallet = walletMatch[1];
+              }
+              
+              if (discordId && wallet) break;
             }
             
             // Set outputs
-            core.setOutput('skip', 'false');
-            core.setOutput('discord_id', discordMatch[1]);
-            core.setOutput('wallet', walletMatch[1]);
-            core.setOutput('pr_author', pr.user.login);
-            core.setOutput('pr_title', pr.title);
-            core.setOutput('lines_changed', pr.additions + pr.deletions);
-            core.setOutput('labels', JSON.stringify(pr.labels.map(l => l.name)));
+            if (discordId && wallet) {
+              core.setOutput('skip', 'false');
+              core.setOutput('discord_id', discordId);
+              core.setOutput('wallet', wallet);
+              console.log(`✓ Found valid info from author`);
+            } else {
+              core.setOutput('skip', 'true');
+              console.log(`✗ Missing info - Discord: ${!!discordId}, Wallet: ${!!wallet}`);
+            }
       
       # Check if already exists
       - name: Check if already onboarded
@@ -129,7 +140,7 @@ jobs:
         id: check
         env:
           GIST_PAT: ${{ secrets.GIST_PAT }}
-          PR_AUTHOR: ${{ steps.extract.outputs.pr_author }}
+          PR_AUTHOR: ${{ inputs.pr_author }}
         run: |
           cd automation
           python scripts/contributor_manager.py \
@@ -145,12 +156,78 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
       
+      # Get author's commit email
+      - name: Get author commit email
+        if: steps.extract.outputs.skip == 'false' && steps.check.outputs.exists == 'false'
+        id: author_info
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            
+            // Get commits from the PR
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+            
+            // Get the author's email from the first commit
+            const authorEmail = commits.length > 0 && commits[0].commit.author.email 
+              ? commits[0].commit.author.email 
+              : 'N/A';
+            
+            core.setOutput('author_email', authorEmail);
+            console.log(`Author email: ${authorEmail}`);
+      
+      # Checkout target repository to update contributors.md
+      - name: Checkout target repository
+        if: steps.extract.outputs.skip == 'false' && steps.check.outputs.exists == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo_name }}
+          token: ${{ secrets.GIST_PAT }}
+          path: target-repo
+      
       # Configure Git for commits
       - name: Configure Git
         if: steps.extract.outputs.skip == 'false' && steps.check.outputs.exists == 'false'
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "GitHub Actions Bot"
+      
+      # Update contributors.md file
+      - name: Update contributors.md
+        if: steps.extract.outputs.skip == 'false' && steps.check.outputs.exists == 'false'
+        env:
+          PR_AUTHOR: ${{ inputs.pr_author }}
+          AUTHOR_EMAIL: ${{ steps.author_info.outputs.author_email }}
+          DISCORD_ID: ${{ steps.extract.outputs.discord_id }}
+          WALLET: ${{ steps.extract.outputs.wallet }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          cd target-repo
+          
+          # Create contributors.md if it doesn't exist
+          if [ ! -f contributors.md ]; then
+            echo "# Contributors" > contributors.md
+            echo "" >> contributors.md
+            echo "List of contributors who have successfully completed onboarding." >> contributors.md
+            echo "" >> contributors.md
+            echo "| GitHub Username | GitHub Email |" >> contributors.md
+            echo "|-----------------|--------------|" >> contributors.md
+          fi
+          
+          # Add contributor entry
+          echo "| @$PR_AUTHOR | $AUTHOR_EMAIL |" >> contributors.md
+          
+          # Commit and push
+          git add contributors.md
+          git commit -m "chore: add contributor @$PR_AUTHOR to registry"
+          git push
       
       # Create contributor entry in Gist
       - name: Create contributor entry
@@ -159,12 +236,11 @@ jobs:
           GIST_PAT: ${{ secrets.GIST_PAT }}
           PR_NUMBER: ${{ inputs.pr_number }}
           REPO_NAME: ${{ inputs.repo_name }}
-          PR_AUTHOR: ${{ steps.extract.outputs.pr_author }}
+          PR_AUTHOR: ${{ inputs.pr_author }}
           DISCORD_ID: ${{ steps.extract.outputs.discord_id }}
           WALLET: ${{ steps.extract.outputs.wallet }}
-          PR_TITLE: ${{ steps.extract.outputs.pr_title }}
-          LINES_CHANGED: ${{ steps.extract.outputs.lines_changed }}
-          LABELS: ${{ steps.extract.outputs.labels }}
+          PR_TITLE: ${{ inputs.pr_title }}
+          LINES_CHANGED: ${{ inputs.lines_changed }}
         run: |
           cd automation
           python scripts/contributor_manager.py \
@@ -176,7 +252,7 @@ jobs:
             --repo-name "$REPO_NAME" \
             --pr-title "$PR_TITLE" \
             --lines-changed "$LINES_CHANGED" \
-            --labels "$LABELS" \
+            --labels "[]" \
             --gist-pat "$GIST_PAT"
       
       # Post success message
@@ -185,7 +261,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
-          PR_AUTHOR: ${{ steps.extract.outputs.pr_author }}
+          PR_AUTHOR: ${{ inputs.pr_author }}
           DISCORD_ID: ${{ steps.extract.outputs.discord_id }}
           WALLET: ${{ steps.extract.outputs.wallet }}
         with:
@@ -194,11 +270,25 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: parseInt(process.env.PR_NUMBER, 10),
-              body: `**Onboarding complete!**\n\nThank you @${process.env.PR_AUTHOR}! Your information has been saved.\n\n**Your Stats:**\n- Total PRs: 1\n- Discord: \`${process.env.DISCORD_ID}\`\n- Wallet: \`${process.env.WALLET}\``
+              body: `🎉 **Onboarding complete!**\n\nThank you @${process.env.PR_AUTHOR}! Your information has been saved.\n\n**Your Stats:**\n- Total PRs: 1\n- Discord: \`${process.env.DISCORD_ID}\`\n- Wallet: \`${process.env.WALLET}\``
+            });
+      
+      # Post error message if info not found
+      - name: Post error message
+        if: steps.extract.outputs.skip == 'true'
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_AUTHOR: ${{ inputs.pr_author }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.PR_NUMBER, 10),
+              body: `⚠️ **Onboarding incomplete** @${process.env.PR_AUTHOR}\n\nWe couldn't find valid onboarding information in your PR comments.\n\nPlease provide:\n\`\`\`\ndiscord: YOUR_DISCORD_ID\nwallet: YOUR_WALLET_ADDRESS\n\`\`\`\n\nContact a maintainer for assistance.`
             });
       
       - name: Already onboarded
         if: steps.extract.outputs.skip == 'false' && steps.check.outputs.exists == 'true'
-        env:
-          PR_AUTHOR: ${{ steps.extract.outputs.pr_author }}
-        run: echo "[INFO] Contributor $PR_AUTHOR is already onboarded. Skipping."
+        run: echo "[INFO] Contributor already onboarded. Skipping."
