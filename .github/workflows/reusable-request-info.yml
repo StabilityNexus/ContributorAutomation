@@ -55,7 +55,6 @@ jobs:
           python scripts/contributor_manager.py \
             --action check_exists \
             --username "$PR_AUTHOR" \
-            --gist-pat "$GIST_PAT" \
             --output-file ../check_result.json
           
           if [ -f ../check_result.json ]; then

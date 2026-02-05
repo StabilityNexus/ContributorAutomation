@@ -19,11 +19,14 @@ from utils import load_config, sanitize_filename, calculate_lines_changed, write
 class ContributorManager:
     """Manages contributor TOML files in GitHub Gist."""
     
-    def __init__(self, gist_pat: str):
-        if not gist_pat or gist_pat.strip() == '':
-            raise ValueError("GIST_PAT is required")
-        
-        self.gist_pat = gist_pat
+    def __init__(self, gist_pat: str = None):
+        if gist_pat:
+            self.gist_pat = gist_pat
+        else:
+            self.gist_pat = os.environ.get('GIST_PAT')
+            
+        if not self.gist_pat or self.gist_pat.strip() == '':
+            raise ValueError("GIST_PAT is required (set as env var or pass explicitly)")
         self.config = load_config()
         self.gist_url = self.config['gist']['registry_url']
         self.repo_dir = None
@@ -180,7 +183,7 @@ def main():
     parser.add_argument('--pr-title', help='PR title')
     parser.add_argument('--lines-changed', type=int, default=0, help='Lines changed')
     parser.add_argument('--labels', help='PR labels (JSON array string)')
-    parser.add_argument('--gist-pat', required=True, help='GitHub PAT for Gist')
+    # parser.add_argument('--gist-pat', required=True, help='GitHub PAT for Gist')
     parser.add_argument('--output-file', help='Output file for results')
     
     args = parser.parse_args()
@@ -213,7 +216,13 @@ def main():
             parser.error(f"add_pr action requires: --{', --'.join(missing)}")
     
     try:
-        manager = ContributorManager(args.gist_pat)
+        # Get GIST_PAT from env if not passed (though we removed the arg, so it must be from env)
+        gist_pat = os.environ.get('GIST_PAT')
+        if not gist_pat:
+            print("Error: GIST_PAT environment variable is required")
+            sys.exit(1)
+            
+        manager = ContributorManager(gist_pat)
         
         if args.action == 'check_exists':
             exists = manager.contributor_exists(args.username)

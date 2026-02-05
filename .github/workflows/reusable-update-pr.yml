@@ -57,7 +57,6 @@ jobs:
           python scripts/contributor_manager.py \
             --action check_exists \
             --username "${{ inputs.pr_author }}" \
-            --gist-pat "$GIST_PAT" \
             --output-file ../check_result.json
           
           if [ -f ../check_result.json ]; then
@@ -106,8 +105,7 @@ jobs:
             --repo-name "$REPO_NAME" \
             --pr-title "$PR_TITLE" \
             --lines-changed "$LINES_CHANGED" \
-            --labels '${{ steps.labels.outputs.result }}' \
-            --gist-pat "$GIST_PAT"
+            --labels '${{ steps.labels.outputs.result }}'
       
       - name: Not onboarded
         if: steps.check.outputs.exists == 'false'

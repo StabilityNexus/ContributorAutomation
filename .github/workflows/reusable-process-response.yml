@@ -135,7 +135,6 @@ jobs:
           python scripts/contributor_manager.py \
             --action check_exists \
             --username "$PR_AUTHOR" \
-            --gist-pat "$GIST_PAT" \
             --output-file ../check_result.json
           
           if [ -f ../check_result.json ]; then
@@ -176,8 +175,7 @@ jobs:
             --repo-name "$REPO_NAME" \
             --pr-title "$PR_TITLE" \
             --lines-changed "$LINES_CHANGED" \
-            --labels "$LABELS" \
-            --gist-pat "$GIST_PAT"
+            --labels "$LABELS"
       
       # Post success message
       - name: Post success message
