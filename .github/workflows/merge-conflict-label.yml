@@ -1,0 +1,54 @@
+name: Label pull requests with merge conflicts
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label-conflicts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add or remove the needs-rebase label
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const label = 'needs-rebase';
+            const { owner, repo } = context.repo;
+
+            await github.rest.issues.createLabel({
+              owner, repo, name: label,
+              color: 'b60205',
+              description: 'This pull request has merge conflicts and needs a rebase',
+            }).catch((error) => {
+              if (error.status !== 422) throw error;
+            });
+
+            async function updateLabel(number) {
+              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+              if (pr.state !== 'open' || pr.mergeable_state === 'unknown') return;
+
+              const hasLabel = pr.labels.some((item) => item.name === label);
+              if (pr.mergeable_state === 'dirty' && !hasLabel) {
+                await github.rest.issues.addLabels({ owner, repo, issue_number: number, labels: [label] });
+                console.log(`Added ${label} to #${number}`);
+              } else if (pr.mergeable_state !== 'dirty' && hasLabel) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number: number, name: label })
+                  .catch((error) => { if (error.status !== 404) throw error; });
+                console.log(`Removed ${label} from #${number}`);
+              }
+            }
+
+            if (context.eventName === 'schedule' || context.eventName === 'workflow_dispatch') {
+              const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', per_page: 100 });
+              for (const pr of prs) await updateLabel(pr.number);
+            } else {
+              await updateLabel(context.issue.number);
+            }
